@@ -11,7 +11,7 @@ __device__ static inline int32_t getRotation(const int32_t x, const int32_t y, c
     int64_t i = (int64_t)(int32_t)(3129871U * (uint32_t)x) ^ (int64_t)((uint64_t)z * 116129781ULL) ^ (int64_t)y;
     i = i * i * 42317861ULL + i * 11ULL;
     i = i >> 16;
-    return abs(random(i)) & ((1<<4) - 1);
+    return abs(random(i)) % 4;
 }
 
 __device__ static inline int32_t isMatching(int32_t x, int32_t y, int32_t z)
@@ -50,16 +50,15 @@ __global__ void spawnThread(const int32_t xMin, const int32_t xMax, const int32_
     uint32_t zPos;
 
     //< (xRange*zRange) because the bottomright most item is just the amount of positions to check
-    for(int64_t position = threadId; position < (xRange*zRange); position += (1024*1024))
+    for(int64_t position = threadId; position < ((uint64_t)xRange*(uint64_t)zRange); position += (1024*1024))
     {
-        xPos = position/xRange + xMin;
-        zPos = position%zRange + zMin;
+        xPos = position%xRange + xMin;
+        zPos = position/xRange + zMin;
 
         //without using the +xMin +zMin, the code always puts the searchy thing at 
         if(isMatching(xPos, yPos, zPos)) printf("%d,%d,%d\n", xPos, yPos, zPos);
-        //printf("%d,%d,%d checked\n", xPos, yPos, zPos);
+        //if(zPos==0)printf("%d,%d,%d checked pos:%ld\n", xPos, yPos, zPos, position);
 
-        if(zMax < xPos) return;
     }
 
 }
@@ -68,14 +67,18 @@ int main()
 {
     cudaError_t err;
 
-    int32_t xMin = -69;
-    int32_t zMin = -69;
+    int32_t xMin = -50000;
+    int32_t zMin = -50000;
 
-    int32_t xMax = 420;
-    int32_t zMax = 1337;
+    int32_t xMax = 50000;
+    int32_t zMax = 50000;
 
-    int32_t yMin = -64;
-    int32_t yMax = 320;
+    int32_t yMin = 0;
+    int32_t yMax = 256;
+
+    //spawnThread<<<1024,1024>>>(xMin, xMax, zMin, zMax, 64);
+    //cudaDeviceSynchronize();
+    //return 0;
 
     for(; yMin < yMax; yMin++)
     {
@@ -84,7 +87,7 @@ int main()
         //error checking
         err = cudaGetLastError();
         if(err != cudaSuccess){printf("Error: %s\n", cudaGetErrorString(err));exit(-1);}
-            
+        printf("complete with y=%d\n", yMin);
         cudaDeviceSynchronize();
     }
     printf("complete\n");
