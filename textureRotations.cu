@@ -1,6 +1,13 @@
 #include <stdio.h>
 #include <stdint.h>
 
+struct Pos3d{
+    int32_t x;
+    int32_t y;
+    int32_t z;
+    uint8_t rotation;
+};
+
 __device__ static inline int32_t random(long seed) {
     seed = (seed ^ 0x5DEECE66DL) & ((1L << 48) - 1);
     return (int)((seed * 0xBB20B4600A69L + 0x40942DE6BAL) >> 16);
@@ -16,32 +23,34 @@ __device__ static inline int32_t getRotation(const int32_t x, const int32_t y, c
 
 __device__ static inline int32_t isMatching(int32_t x, int32_t y, int32_t z)
 {
-    //hardcode rotation values. right now its set to find squares of 5x5 blocks
-    //with the same texture rotations. (actually its just a single direction but too lazy to change)
 
-    for(uint32_t j = 0; j < 5; j++)
+    //CHANGE THIS
+    uint32_t offsetCount = 4;
+
+    //AND THIS
+    struct Pos3d offsets[] = {
+        {0, 0, 0, 3}, //rotation 3 at reference point (x,y,z)
+        {1, 0, 0, 0}, //rotation 0 at point relative (x+1,y,z)
+        {0, 2, 0, 0}, //rotation 0 at point (x,y+2,z)
+        {3, 3, 2, 1} //rotation 1 at point (x+3,y+3,z+2)
+    };
+
+    //reference the definition of Pos3d
+
+    for(uint32_t i = 0; i < offsetCount; i++)
     {
-        for(uint32_t i = 0; i < 5; i++)
-        {
-            //set y value here
-            if(getRotation(x+i, y, z+j) != 0) return 0;
-        }
+        if(
+            getRotation(
+                x+offsets[i].x,
+                y+offsets[i].y,
+                z+offsets[i].z
+            ) != offsets[i].rotation) return 0;
     }
     return 1;
 }
 
-//get id, that will be offset
-//take a number and use it as counter
-//each thread goes over a list of a bunch of positions
-//where (x = counter/xRange)
-//and (z = counter % zRange)
-//once a thread reaches a position outside of the bounds, kill the thread
-//thread will always go out of bounds on xMax
-
 __global__ void spawnThread(const int32_t xMin, const int32_t xMax, const int32_t zMin, const int32_t zMax, const int32_t yPos)
 {
-    //each gpu thread will search a single band, from (x, -30000000) to (x, 30000000)
-    //60 mil checks each
     const int threadId = blockIdx.x * blockDim.x + threadIdx.x;
     const int32_t xRange = xMax - xMin;
     const int32_t zRange = zMax - zMin;
@@ -57,8 +66,6 @@ __global__ void spawnThread(const int32_t xMin, const int32_t xMax, const int32_
 
         //without using the +xMin +zMin, the code always puts the searchy thing at 
         if(isMatching(xPos, yPos, zPos)) printf("%d,%d,%d\n", xPos, yPos, zPos);
-        //if(zPos==0)printf("%d,%d,%d checked pos:%ld\n", xPos, yPos, zPos, position);
-
     }
 
 }
@@ -75,10 +82,6 @@ int main()
 
     int32_t yMin = 0;
     int32_t yMax = 256;
-
-    //spawnThread<<<1024,1024>>>(xMin, xMax, zMin, zMax, 64);
-    //cudaDeviceSynchronize();
-    //return 0;
 
     for(; yMin < yMax; yMin++)
     {
