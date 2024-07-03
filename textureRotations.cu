@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#define IS_112 1
+
 struct Pos3d{
     int32_t x;
     int32_t y;
@@ -9,16 +11,22 @@ struct Pos3d{
 };
 
 __device__ static inline int32_t random(long seed) {
-    seed = (seed ^ 0x5DEECE66DL) & ((1L << 48) - 1);
-    return (int)((seed * 0xBB20B4600A69L + 0x40942DE6BAL) >> 16);
+    seed = (seed ^ 0x5DEECE66DULL) & ((1ULL << 48) - 1);
+    return (int)((seed * 0xBB20B4600A69ULL + 0x40942DE6BAULL) >> 16);
 }
 
 __device__ static inline int32_t getRotation(const int32_t x, const int32_t y, const int32_t z)
 {
-    int64_t i = (int64_t)(int32_t)(3129871U * (uint32_t)x) ^ (int64_t)((uint64_t)z * 116129781ULL) ^ (int64_t)y;
+    int64_t i = (int64_t)(int32_t)(3129871ULL * (uint32_t)x) ^ (int64_t)((uint64_t)z * 116129781ULL) ^ (int64_t)y;
     i = i * i * 42317861ULL + i * 11ULL;
-    i = i >> 16;
-    return abs(random(i)) % 4;
+    
+    //int cast for 1.12-, otherwise none
+    if(!IS_112) i = i >> 16;
+    else i = (int)i >> 16;
+
+    //no random call in 1.12-
+    if(!IS_112) return abs(random(i)) % 4;
+    else return abs(i) % 4;
 }
 
 __device__ static inline int32_t isMatching(int32_t x, int32_t y, int32_t z)
@@ -77,21 +85,21 @@ int main()
     int32_t xMin = -50000;
     int32_t zMin = -50000;
 
-    int32_t xMax = 50000;
+    int32_t xMax = 500000;
     int32_t zMax = 50000;
 
-    int32_t yMin = 0;
-    int32_t yMax = 256;
+    int32_t yMin = 63;
+    int32_t yMax = 63;
 
-    for(; yMin < yMax; yMin++)
+    for(; yMin <= yMax; yMin++)
     {
         spawnThread<<<1024,1024>>>(xMin, xMax, zMin, zMax, yMin);
 
         //error checking
         err = cudaGetLastError();
         if(err != cudaSuccess){printf("Error: %s\n", cudaGetErrorString(err));exit(-1);}
-        printf("complete with y=%d\n", yMin);
         cudaDeviceSynchronize();
+        printf("complete with y=%d\n", yMin);
     }
     printf("complete\n");
 }
