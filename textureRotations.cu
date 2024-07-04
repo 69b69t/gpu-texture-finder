@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#define IS_112 1
+#define IS_112 0
+#define UNKNOWN_ROTATION 1
 
 struct Pos3d{
     int32_t x;
@@ -17,6 +18,9 @@ __device__ static inline int32_t random(long seed) {
 
 __device__ static inline int32_t getRotation(const int32_t x, const int32_t y, const int32_t z)
 {
+    /*
+    gets the rotation at a block
+    */
     int64_t i = (int64_t)(int32_t)(3129871ULL * (uint32_t)x) ^ (int64_t)((uint64_t)z * 116129781ULL) ^ (int64_t)y;
     i = i * i * 42317861ULL + i * 11ULL;
     
@@ -29,13 +33,52 @@ __device__ static inline int32_t getRotation(const int32_t x, const int32_t y, c
     else return abs(i) % 4;
 }
 
+__device__ static inline void rotate90DegCW(struct Pos3d* formation, uint32_t formationCount)
+{
+    /*
+    rotates a formation 90 degrees clockwise
+    */
+    int32_t temp;
+    for(uint32_t i = 0; i < formationCount; i++)
+    {
+        //(x,z) rotated 90 deg would be (z,-x)
+        //swap x and z then negate z
+        temp = formation[i].z;
+        formation[i].z = -formation[i].x;
+        formation[i].x = temp;
+        //printf("formation[i].z = %d\n", formation[i].z);
+    }
+}
+
+__device__ static inline uint32_t checkFormation(struct Pos3d* formation, uint32_t formationCount, int32_t x, int32_t y, int32_t z)
+{
+    /*
+    takes an x,y,z position and a formation and checks ONE orientation
+    returns 0 if not a match, and 1 if there is
+    */
+    for(uint32_t i = 0; i < formationCount; i++)
+    {
+        //if block rotation is not equal to the rotation we're searching for, invalid
+        if(getRotation(x+formation[i].x, y+formation[i].y, z+formation[i].z) != ((formation[i].rotation) % 4)) return 0;
+    }
+    return 1;
+}
+
+/*
+best times
+4 rots: 33.0
+1 rot: 10.1
+*/
+
 __device__ static inline int32_t isMatching(int32_t x, int32_t y, int32_t z)
 {
+    /*
+    takes in a x,y,z position and returns 0 if it dosent match or 1 if it does
+    */
 
-    //CHANGE THIS
+
+    //change these and reference the definition of Pos3d
     uint32_t offsetCount = 4;
-
-    //AND THIS
     struct Pos3d offsets[] = {
         {0, 0, 0, 3}, //rotation 3 at reference point (x,y,z)
         {1, 0, 0, 0}, //rotation 0 at point relative (x+1,y,z)
@@ -43,22 +86,28 @@ __device__ static inline int32_t isMatching(int32_t x, int32_t y, int32_t z)
         {3, 3, 2, 1} //rotation 1 at point (x+3,y+3,z+2)
     };
 
-    //reference the definition of Pos3d
+    uint32_t loops;
+    if(UNKNOWN_ROTATION) loops = 4;
+    else loops = 1;
 
-    for(uint32_t i = 0; i < offsetCount; i++)
+    for(uint32_t j = 0; j < loops; j++)
     {
-        if(
-            getRotation(
-                x+offsets[i].x,
-                y+offsets[i].y,
-                z+offsets[i].z
-            ) != offsets[i].rotation) return 0;
+        //if checkFormation ever returns 1, we have a match and can print it
+        if(checkFormation(formation, formationCount, x, y, z)) return 1;
+
+        //rotate
+        rotate90DegCW(formation, formationCount);
     }
-    return 1;
+
+    //else is invalid
+    return 0;
 }
 
 __global__ void spawnThread(const int32_t xMin, const int32_t xMax, const int32_t zMin, const int32_t zMax, const int32_t yPos)
 {
+    /*
+    spawns a single searcher thread that is aware of which thread it is
+    */
     const int threadId = blockIdx.x * blockDim.x + threadIdx.x;
     const int32_t xRange = xMax - xMin;
     const int32_t zRange = zMax - zMin;
@@ -66,13 +115,12 @@ __global__ void spawnThread(const int32_t xMin, const int32_t xMax, const int32_
     uint32_t xPos;
     uint32_t zPos;
 
-    //< (xRange*zRange) because the bottomright most item is just the amount of positions to check
-    for(int64_t position = threadId; position < ((uint64_t)xRange*(uint64_t)zRange); position += (1024*1024))
+    //"< (xRange*zRange)"" because the bottomright most item is just the amount of positions to check
+    for(int64_t position = threadId; position < ((uint64_t)xRange*(uint64_t)zRange); position += ( blockDim.x * gridDim.x ))
     {
         xPos = position%xRange + xMin;
         zPos = position/xRange + zMin;
 
-        //without using the +xMin +zMin, the code always puts the searchy thing at 
         if(isMatching(xPos, yPos, zPos)) printf("%d,%d,%d\n", xPos, yPos, zPos);
     }
 
@@ -82,17 +130,20 @@ int main()
 {
     cudaError_t err;
 
-    int32_t xMin = -50000;
-    int32_t zMin = -50000;
+    int32_t xMin = -1000000;
+    int32_t zMin = -100000;
 
-    int32_t xMax = 500000;
-    int32_t zMax = 50000;
+    int32_t xMax = 100000;
+    int32_t zMax = 100000;
 
     int32_t yMin = 63;
     int32_t yMax = 63;
 
     for(; yMin <= yMax; yMin++)
     {
+        //if you get
+        //Error: too many resources requested for launch
+        //decrease these parameters (the 1024s)
         spawnThread<<<1024,1024>>>(xMin, xMax, zMin, zMax, yMin);
 
         //error checking
