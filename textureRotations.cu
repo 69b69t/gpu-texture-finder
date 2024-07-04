@@ -79,7 +79,7 @@ __device__ static inline int32_t isMatching(int32_t x, int32_t y, int32_t z)
 
     //change these and reference the definition of Pos3d
     uint32_t formationCount = 4;
-    struct Pos3d offsets[] = {
+    struct Pos3d formation[] = {
         {0, 0, 0, 3}, //rotation 3 at reference point (x,y,z)
         {1, 0, 0, 0}, //rotation 0 at point relative (x+1,y,z)
         {0, 2, 0, 0}, //rotation 0 at point (x,y+2,z)
