@@ -42,11 +42,13 @@ __device__ static inline void rotate90DegCW(struct Pos3d* formation, uint32_t fo
     for(uint32_t i = 0; i < formationCount; i++)
     {
         //(x,z) rotated 90 deg would be (z,-x)
-        //swap x and z then negate z
-        temp = formation[i].z;
-        formation[i].z = -formation[i].x;
-        formation[i].x = temp;
-        //printf("formation[i].z = %d\n", formation[i].z);
+        temp = formation[i].x;
+        formation[i].x = formation[i].z;
+        formation[i].z = temp;
+
+        formation[i].x = -formation[i].x;
+
+        formation[i].rotation = ((formation[i].rotation+1) % 4);
     }
 }
 
@@ -64,13 +66,7 @@ __device__ static inline uint32_t checkFormation(struct Pos3d* formation, uint32
     return 1;
 }
 
-/*
-best times
-4 rots: 33.0
-1 rot: 10.1
-*/
-
-__device__ static inline int32_t isMatching(int32_t x, int32_t y, int32_t z)
+__device__ static inline uint32_t isMatching(int32_t x, int32_t y, int32_t z)
 {
     /*
     takes in a x,y,z position and returns 0 if it dosent match or 1 if it does
@@ -79,25 +75,29 @@ __device__ static inline int32_t isMatching(int32_t x, int32_t y, int32_t z)
 
     //change these and reference the definition of Pos3d
     uint32_t formationCount = 4;
+
+
     struct Pos3d formation[] = {
-        {0, 0, 0, 3}, //rotation 3 at reference point (x,y,z)
-        {1, 0, 0, 0}, //rotation 0 at point relative (x+1,y,z)
-        {0, 2, 0, 0}, //rotation 0 at point (x,y+2,z)
-        {3, 3, 2, 1} //rotation 1 at point (x+3,y+3,z+2)
+        {1, 0, 0, 3},
+        {2, 0, 0, 1},
+        {3, 0, 0, 3},
+        {6, 0, 4, 3}
     };
 
-    uint32_t loops;
-    if(UNKNOWN_ROTATION) loops = 4;
-    else loops = 1;
-
-    for(uint32_t j = 0; j < loops; j++)
+    //this is unreasonably 3x faster
+    if(UNKNOWN_ROTATION)
     {
-        //if checkFormation ever returns 1, we have a match and can print it
         if(checkFormation(formation, formationCount, x, y, z)) return 1;
+        rotate90DegCW(formation, formationCount);
 
-        //rotate
+        if(checkFormation(formation, formationCount, x, y, z)) return 1;
+        rotate90DegCW(formation, formationCount);
+
+        if(checkFormation(formation, formationCount, x, y, z)) return 1;
         rotate90DegCW(formation, formationCount);
     }
+
+    if(checkFormation(formation, formationCount, x, y, z)) return 1;
 
     //else is invalid
     return 0;
@@ -130,14 +130,14 @@ int main()
 {
     cudaError_t err;
 
-    int32_t xMin = -1000000;
-    int32_t zMin = -100000;
+    int32_t xMin = -200000;
+    int32_t zMin = -200000;
 
-    int32_t xMax = 100000;
-    int32_t zMax = 100000;
+    int32_t xMax = 200000;
+    int32_t zMax = 200000;
 
-    int32_t yMin = 63;
-    int32_t yMax = 63;
+    int32_t yMin = 20;
+    int32_t yMax = 200;
 
     for(; yMin <= yMax; yMin++)
     {
