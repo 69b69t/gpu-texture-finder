@@ -1,8 +1,12 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#define IS_112 0
 #define UNKNOWN_ROTATION 1
+
+//if IS_BEDROCK flag is set, ignore the IS_112 flag
+#define IS_BEDROCK 1
+#define IS_112 1
+
 
 struct Pos3d{
     int32_t x;
@@ -21,16 +25,32 @@ __device__ static inline int32_t getRotation(const int32_t x, const int32_t y, c
     /*
     gets the rotation at a block
     */
-    int64_t i = (int64_t)(int32_t)(3129871ULL * (uint32_t)x) ^ (int64_t)((uint64_t)z * 116129781ULL) ^ (int64_t)y;
-    i = i * i * 42317861ULL + i * 11ULL;
-    
-    //int cast for 1.12-, otherwise none
-    if(!IS_112) i = i >> 16;
-    else i = (int)i >> 16;
+    if(!IS_BEDROCK)
+    {
+        //java stuff
+        int64_t i = (int64_t)(int32_t)(3129871ULL * (uint32_t)x) ^ (int64_t)((uint64_t)z * 116129781ULL) ^ (int64_t)y;
+        i = i * i * 42317861ULL + i * 11ULL;
+        
+        //int cast for 1.12-, otherwise none
+        if(!IS_112) i = i >> 16;
+        else i = (int)i >> 16;
 
-    //no random call in 1.12-
-    if(!IS_112) return abs(random(i)) % 4;
-    else return abs(i) % 4;
+        //no random call in 1.12-
+        if(!IS_112) return abs(random(i)) % 4;
+        else return abs(i) % 4;
+    }
+    else
+    {
+        //bedrock stuff. thanks andrew!
+        int uVar1 = (z * 0x6ebfff5U) ^ (x * 0x2fc20fU) ^ y;
+        uVar1 = (uVar1 * 0x285b825 + 0xb) * uVar1;
+        int rot = (uVar1 >> 24) & 3;
+        if ((rot & 2) != 0)
+        {
+            rot ^= 1;
+        }
+        return rot;
+    }
 }
 
 __device__ static inline void rotate90DegCW(struct Pos3d* formation, uint32_t formationCount)
@@ -74,14 +94,29 @@ __device__ static inline uint32_t isMatching(int32_t x, int32_t y, int32_t z)
 
 
     //change these and reference the definition of Pos3d
-    uint32_t formationCount = 4;
+    uint32_t formationCount = 16;
 
 
     struct Pos3d formation[] = {
-        {1, 0, 0, 3},
-        {2, 0, 0, 1},
-        {3, 0, 0, 3},
-        {6, 0, 4, 3}
+        {0, 0, 0, 0},
+        {1, 0, 0, 0},
+        {2, 0, 0, 0},
+        {3, 0, 0, 0},
+
+        {0, 0, 1, 0},
+        {1, 0, 1, 0},
+        {2, 0, 1, 0},
+        {3, 0, 1, 0},
+
+        {0, 0, 2, 0},
+        {1, 0, 2, 0},
+        {2, 0, 2, 0},
+        {3, 0, 2, 0},
+
+        {0, 0, 3, 0},
+        {1, 0, 3, 0},
+        {2, 0, 3, 0},
+        {3, 0, 3, 0}
     };
 
     //this is unreasonably 3x faster
@@ -130,21 +165,21 @@ int main()
 {
     cudaError_t err;
 
-    int32_t xMin = -200000;
-    int32_t zMin = -200000;
+    int32_t xMin = 0;
+    int32_t zMin = 0;
 
-    int32_t xMax = 200000;
-    int32_t zMax = 200000;
+    int32_t xMax = 50000;
+    int32_t zMax = 50000;
 
-    int32_t yMin = 20;
-    int32_t yMax = 200;
+    int32_t yMin = -61;
+    int32_t yMax = -61;
 
     for(; yMin <= yMax; yMin++)
     {
         //if you get
         //Error: too many resources requested for launch
         //decrease these parameters (the 1024s)
-        spawnThread<<<1024,1024>>>(xMin, xMax, zMin, zMax, yMin);
+        spawnThread<<<1024,512>>>(xMin, xMax, zMin, zMax, yMin);
 
         //error checking
         err = cudaGetLastError();
